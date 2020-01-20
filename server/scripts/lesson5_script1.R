@@ -1,0 +1,4 @@
+library(tidyverse)
+getwd()
+object1<-read_csv("data/lesson2/heights.csv")
+head(object1, n=2)

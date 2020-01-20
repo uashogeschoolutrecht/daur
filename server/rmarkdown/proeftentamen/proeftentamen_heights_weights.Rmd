@@ -1,0 +1,194 @@
+---
+title: "Proeftentamen_heights_weights"
+author: "Marc Teunis / Chris van Oevelen"
+date: '`r Sys.Date()`'
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(forcats)
+library(here)
+```
+
+```{r importing, include=FALSE}
+height_weight <-read_csv(here("data/proeftentamen/height_weight.csv"))
+```
+
+##### __Inspection of datafile:__
+###### __Question1:__ Show the first two lines of the datafile in a table
+```{r inspection_head, echo=FALSE}
+knitr::kable(
+head(height_weight, n=1),
+caption = "Table1: The dataset contains heights, weights and 8 more variables about 4000 people. "
+)
+```
+
+##### __Data_wrangling. Creation of a new variable: body mass index (bmi):__ 
+###### __Question2:__ Calculate the body mass index (bmi) of each person and store in new variable named "bmi". Bmi = weight (in kg) / height (in meters) ^2  
+
+The unit of weight = lbs and of height = inches. To create body mass index the variable weight and height needs to be converted to respectively kilogram (kg) and meters (m):  
+1 inch = 2.54 cm  
+1 lbs = 0.45359237 kg  
+
+```{r conversion, echo = FALSE}
+height_weight <-height_weight %>% 
+  mutate(height_m = height * 0.0254 ,
+         weight_kg = weight * 0.45359237 , 
+         bmi=weight_kg / (height_m^2))
+height_weight_slc <- height_weight %>% select(income:education, bmi)
+```
+
+###### __Question3:__ Make a selection of variables and show the first two lines of the selected variables in a table. Variables to be selected are: income, height, weight, sex, race, education and bmi
+
+```{r table2, echo = FALSE}
+knitr::kable( 
+  head(height_weight_slc, n=1), 
+  caption = "Table2: Selection of variables of the datafile"      
+)
+```
+
+##### __Data analysis: data exploration__  
+###### __Question4:__ Which race has the highest % of persons with a weight > 200 lbs?  
+
+```{r 200_lbs, echo=FALSE}
+height_weight_slc_na <-height_weight_slc %>% filter(!is.na(weight)) 
+knitr::kable(
+height_weight_slc_na %>% group_by(race) %>% 
+  summarize(race_200 = sum(weight > 200, na.rm=T),
+            race_n = n(),
+            fraction_more_than_200lbs = round(race_200 / race_n, digits = 3) ) %>% 
+  select(race, fraction_more_than_200lbs) ,
+caption = "Table3: Black race has highest fraction of weight > 200" )
+```
+
+###### __Question5:__ Filter the dataset to extract the top 5 tallest hispanic males in the dataset.
+
+```{r tallest_hispanic, echo=FALSE}
+knitr::kable(
+  tallest_hispanic_men <- height_weight_slc %>%
+  filter(race == "hispanic" & sex == "male") %>%
+  arrange(desc(height)) %>% head(n=5),
+  caption = "Table4: Tallest Hispanic men" )
+```
+
+###### __Question6:__ Find the two tallest women in the data. 
+
+```{r tallest_women, echo = FALSE}
+knitr::kable(
+  rank_women_2 <- height_weight_slc %>%
+  filter(sex == "female") %>%
+  arrange(desc(height)) %>% head(n=2),
+  caption = "Table5: Tallest woman" )
+```
+
+###### __Question7:__ Find all men that match the height and weight of the 2nd tallest woman of question 6  
+```{r match, echo = FALSE}
+knitr::kable(
+  match_1 <- height_weight_slc %>%
+  filter(sex == "male" ,  
+         height == rank_women_2$height[2],
+         weight == rank_women_2$weight[2] ),
+  caption = "Table6: List of men matching the 2nd tallest woman by weight and height"
+)
+```
+
+##### __Data analysis: difference between bmi values per race and sex__
+###### __Question8:__ Make a summary of the bmi values for each group (race x sex = 4 x 2 = 8 groups)
+
+```{r bmi_summary, echo=FALSE}
+knitr::kable(
+  height_weight_slc %>% 
+    group_by (race, sex ) %>% 
+    summarize (mean_bmi = mean(bmi, na.rm=TRUE),
+               sd_bmi = sd(bmi, na.rm=TRUE),
+               median_bmi = median(bmi, na.rm=TRUE),
+               min = min (bmi, na.rm = TRUE),
+               max = max (bmi, na.rm = TRUE),
+               count=n()),
+  caption = "Table7: Summary of the bmi values per race and sex"
+)
+```
+
+###### __Question9:__ Visualise the bmi data for the 8 groups by a boxplot
+
+```{r boxplot, echo=FALSE, warning=FALSE}
+height_weight_slc %>% ggplot(aes(x=race, y=bmi, fill = sex )) + 
+  geom_boxplot() 
+```
+
+###### __Question10:__ Perform Shapiro-wilk test for each of the 8 groups
+
+H~0~: Data of each group is normally distributed  
+H~1~: Data of each group is not normally distributed
+
+```{r Shapiro_wilk, echo = FALSE}
+knitr::kable(
+  height_weight_slc %>% 
+    group_by(race, sex) %>% 
+    summarize (SW = shapiro.test(bmi)$p.value),
+    caption = "Table8: P-values of SW test per race and sex"
+)
+```
+
+Conclusion: None have the race groups have both p-values of the SW test > 0.05. Use a non-parametric test for further analysis. 
+
+###### __Question11:__ Perform the right statistical test (based on the outcome of the Shapiro-Wilk test
+
+Based on the SW test we will use a unpaired wilcoxon test  
+H~0~: There is no statistically significant difference in bmi between male and female per race
+H~1~: There is statistically significant difference in bmi between male and female per race
+
+```{r wilcoxon, echo=FALSE, warning=FALSE}
+knitr::kable(
+  height_weight_slc %>% group_by(race) %>% 
+  summarize (wx = wilcox.test(formula = bmi ~ sex, 
+                              paired = FALSE)$p.value),
+  caption = "Table9: P-values of wilcoxon test for each race"
+)
+```
+
+Conclusion: the groups black, hispanic and other have p-value < 0.05. Reject H~0~ and accept H~1~: There is a statistically significant difference between male and female. For the multiracial group p-value > 0.05. Accept H~0~. No difference. __Note:__ this group has relative small number of data values (female: n=21, male: n=26)
+
+#### __Data analysis: correlation between education and income__
+
+###### __Question12:__  Filter row with education level > 5
+
+```{r filter_education, include=FALSE}
+height_weight_slc_flt <- height_weight_slc %>% 
+  filter(education > 5)
+```
+
+###### __Question13:__ Inspect data by making 8 scatter plots. Each graph in a separate panel  
+
+```{r line_graphs, echo=FALSE}
+height_weight_slc_flt %>% ggplot(aes(education, income)) +
+  geom_jitter() +
+  geom_smooth(aes(colour = race), method = "lm") +
+  facet_grid(sex~race)
+```
+
+###### __Question14:__ Determine the R squared of each regression line for the 8 groups  
+
+```{r R-squared, echo=FALSE}
+group_race_sex <-height_weight_slc_flt %>% 
+  group_split(height_weight_slc_flt$race, 
+              height_weight_slc_flt$sex ) 
+
+lm_rsquared <-group_race_sex %>% map(lm, formula = income ~ education) %>% 
+  map(summary) %>% 
+  map_dbl("adj.r.squared") %>% round (digits = 3)
+
+count_race_sex <- height_weight_slc_flt %>% 
+  count(race,sex)
+
+knitr::kable(
+  tibble(race = count_race_sex$race, 
+       sex = count_race_sex$sex, 
+       count = count_race_sex$n, 
+       r_squared=lm_rsquared),
+      caption = "Table10: R-squared values of regression lines per race and sex"
+)
+```
+
+Conclusion: R squared values are generally low, except 0,394 of group multiracial::female. However, the analysis is based on n=5. Generally there is a absent or weak correation between education and income based on this dataset
